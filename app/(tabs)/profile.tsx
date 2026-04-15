@@ -90,7 +90,7 @@ export default function ProfileScreen() {
           <MenuLink 
             icon={Bell} 
             title="Notifications" 
-            onPress={() => {}} 
+            onPress={() => router.push('/notifications')} 
             color={colors.secondaryText}
           />
           <MenuLink 
@@ -102,7 +102,7 @@ export default function ProfileScreen() {
           <MenuLink 
             icon={Settings} 
             title="Account Settings" 
-            onPress={() => {}} 
+            onPress={() => router.push('/settings')} 
             color={colors.secondaryText}
           />
         </View>

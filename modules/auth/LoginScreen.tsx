@@ -78,10 +78,17 @@ export default function LoginScreen() {
             </View>
 
             <Button 
-              title="Request Access" 
-              onPress={() => {}} 
-              variant="outline"
-            />
+               title="Request Access" 
+               onPress={() => {}} 
+               variant="outline"
+             />
+
+            <TouchableOpacity 
+              onPress={() => router.push('/explore')} 
+              style={[styles.socialBtn, { borderColor: colors.border }]}
+            >
+              <Text style={[styles.socialText, { color: colors.primary }]}>Explore Schools First</Text>
+            </TouchableOpacity>
           </View>
 
           <View style={styles.footer}>
@@ -166,5 +173,17 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 18,
     opacity: 0.7,
+  },
+  socialBtn: {
+    height: 54,
+    borderRadius: 12,
+    borderWidth: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 12,
+  },
+  socialText: {
+    fontSize: 15,
+    fontWeight: '700',
   },
 });
