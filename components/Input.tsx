@@ -14,12 +14,14 @@ interface InputProps extends TextInputProps {
   label?: string;
   error?: string;
   containerStyle?: ViewStyle;
+  leftIcon?: React.ReactNode;
 }
 
 export function Input({ 
   label, 
   error, 
   containerStyle, 
+  leftIcon,
   ...props 
 }: InputProps) {
   const theme = useColorScheme() ?? 'light';
@@ -32,18 +34,25 @@ export function Input({
           {label}
         </Text>
       )}
-      <TextInput
+      <View 
         style={[
-          styles.input,
+          styles.inputContainer,
           { 
-            backgroundColor: theme === 'dark' ? 'rgba(30, 41, 59, 0.5)' : '#FFFFFF', 
-            color: colors.text,
+            backgroundColor: theme === 'dark' ? 'rgba(30, 41, 59, 1)' : '#F5F5F5', 
             borderColor: error ? colors.error : colors.border
           }
         ]}
-        placeholderTextColor={colors.secondaryText}
-        {...props}
-      />
+      >
+        {leftIcon && <View style={styles.iconBox}>{leftIcon}</View>}
+        <TextInput
+          style={[
+            styles.input,
+            { color: colors.text }
+          ]}
+          placeholderTextColor={colors.secondaryText}
+          {...props}
+        />
+      </View>
       {error && (
         <Text style={[styles.errorText, { color: colors.error }]}>{error}</Text>
       )}
@@ -63,12 +72,23 @@ const styles = StyleSheet.create({
     marginLeft: 4,
     letterSpacing: 0.3,
   },
-  input: {
+  inputContainer: {
     height: 58,
     borderRadius: 16,
     borderWidth: 1.5,
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: 18,
+    overflow: 'hidden',
+  },
+  iconBox: {
+    marginRight: 12,
+  },
+  input: {
+    flex: 1,
+    height: '100%',
     fontSize: 16,
+    fontWeight: '600',
   },
   errorText: {
     fontSize: 12,

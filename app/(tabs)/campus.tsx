@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
-import { StyleSheet, ScrollView, TouchableOpacity, TextInput, View as DefaultView } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { StyleSheet, ScrollView, TouchableOpacity, TextInput, View as DefaultView, Alert } from 'react-native';
 import { Text, View, Card, ScreenContainer } from '../../components/Themed';
+import * as Location from 'expo-location';
 import { 
   Search, 
   MapPin, 
@@ -10,54 +11,193 @@ import {
   Clock, 
   Users, 
   TrendingDown, 
-  AlertTriangle 
+  AlertTriangle,
+  RefreshCw
 } from 'lucide-react-native';
 import { Colors } from '../../constants/Colors';
 import { useColorScheme } from 'react-native';
+import { useApp } from '../../store/appContext';
 
-const LOCATIONS = [
-  { id: '1', name: 'University Library', type: 'Academic', distance: '200m', color: '#6366F1', queue: 5, waitTime: '10 min' },
-  { id: '2', name: 'Senate House', type: 'Administrative', distance: '450m', color: '#F59E0B', queue: 42, waitTime: '1.5 hrs' },
-  { id: '3', name: 'Bursar\'s Office', type: 'Finance', distance: '500m', color: '#10B981', queue: 18, waitTime: '45 min' },
-  { id: '4', name: 'Student Union Building', type: 'Social', distance: '300m', color: '#EC4899', queue: 2, waitTime: '2 min' },
-  { id: '5', name: 'ICT Center', type: 'Technical', distance: '150m', color: '#8B5CF6', queue: 25, waitTime: '55 min' },
-];
+// Helper for real-world distance calculation (Haversine)
+function getDistanceInKm(lat1: number, lon1: number, lat2: number, lon2: number) {
+  const R = 6371; // Radius of the earth in km
+  const dLat = (lat2 - lat1) * (Math.PI / 180);
+  const dLon = (lon2 - lon1) * (Math.PI / 180);
+  const a = 
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) * 
+    Math.sin(dLon / 2) * Math.sin(dLon / 2); 
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)); 
+  return R * c; // Distance in km
+}
+
+import MapView, { Marker, Callout } from 'react-native-maps';
 
 export default function CampusScreen() {
+  const { university } = useApp();
   const [search, setSearch] = useState('');
   const [showQueues, setShowQueues] = useState(true);
+  const [userLocation, setUserLocation] = useState<Location.LocationObject | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const mapRef = useRef<MapView>(null);
+  
+  // Local state for "Live" queues (simulated)
+  const [landmarks, setLandmarks] = useState(university?.landmarks || []);
+  
   const theme = useColorScheme() ?? 'light';
   const colors = Colors[theme];
 
+  // Request Location Permissions & Fetch Initial Position
+  useEffect(() => {
+    (async () => {
+      try {
+        let { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') {
+          setErrorMsg('Permission to access location was denied');
+          return;
+        }
+
+        const enabled = await Location.hasServicesEnabledAsync();
+        if (!enabled) {
+          setErrorMsg('Location services are disabled');
+          return;
+        }
+
+        let location = await Location.getCurrentPositionAsync({});
+        setUserLocation(location);
+        setErrorMsg(null);
+      } catch (error) {
+        console.error('Location Error:', error);
+        setErrorMsg('Could not fetch location. Please ensure location services are enabled.');
+      }
+    })();
+  }, []);
+
+  // Update landmarks when university changes
+  useEffect(() => {
+    if (university?.landmarks) {
+      setLandmarks(university.landmarks.map(l => ({
+        ...l,
+        queue: Math.floor(Math.random() * 30) + 2, // Init mock queue
+        waitTime: Math.floor(Math.random() * 45) + ' min'
+      })));
+    }
+  }, [university]);
+
+  // Simulation: Fluctuate queues every 8 seconds
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setLandmarks(prev => prev.map(l => {
+        const diff = Math.floor(Math.random() * 3) - 1; // -1, 0, or 1
+        const newQueue = Math.max(0, (l.queue || 0) + diff);
+        return {
+          ...l,
+          queue: newQueue,
+          waitTime: Math.floor(newQueue * 2.5) + ' min'
+        };
+      }));
+    }, 8000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const refreshLocation = async () => {
+    setIsRefreshing(true);
+    try {
+      const enabled = await Location.hasServicesEnabledAsync();
+      if (!enabled) {
+        Alert.alert("Location Error", "Location services are disabled. Please enable them in settings.");
+        setErrorMsg('Location services are disabled');
+        return;
+      }
+
+      let location = await Location.getCurrentPositionAsync({});
+      setUserLocation(location);
+      setErrorMsg(null);
+      
+      // Focus map on user
+      mapRef.current?.animateToRegion({
+        latitude: location.coords.latitude,
+        longitude: location.coords.longitude,
+        latitudeDelta: 0.005,
+        longitudeDelta: 0.005,
+      });
+    } catch (e) {
+      console.error(e);
+      Alert.alert("Location Error", "Could not refresh your position.");
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
+  const focusBuilding = (lat: number, lng: number) => {
+    mapRef.current?.animateToRegion({
+      latitude: lat,
+      longitude: lng,
+      latitudeDelta: 0.002,
+      longitudeDelta: 0.002,
+    });
+  };
+
+  const getDistanceText = (lat: number, lng: number) => {
+    if (!userLocation) return '--';
+    const dist = getDistanceInKm(
+      userLocation.coords.latitude, 
+      userLocation.coords.longitude, 
+      lat, 
+      lng
+    );
+    if (dist < 1) return Math.round(dist * 1000) + 'm';
+    return dist.toFixed(1) + 'km';
+  };
+
+  const initialRegion = {
+    latitude: university?.coordinates.lat || 5.0416,
+    longitude: university?.coordinates.lng || 7.9142,
+    latitudeDelta: 0.01,
+    longitudeDelta: 0.01,
+  };
+
   return (
     <ScreenContainer>
-      <View style={[styles.mapPlaceholder, { backgroundColor: theme === 'dark' ? '#0F172A' : '#F1F5F9' }]}>
-        <View style={styles.mapGrid}>
-          {LOCATIONS.map((loc, idx) => (
-            <TouchableOpacity 
-              key={loc.id} 
-              style={[
-                styles.mapPin, 
-                { top: `${20 + idx * 15}%`, left: `${15 + (idx % 3) * 25}%` }
-              ]}
+      <View style={styles.mapContainer}>
+        <MapView
+          ref={mapRef}
+          style={styles.map}
+          initialRegion={initialRegion}
+          showsUserLocation={true}
+          userInterfaceStyle={theme === 'dark' ? 'dark' : 'light'}
+          showsMyLocationButton={false}
+          showsCompass={false}
+        >
+          {landmarks.map((loc) => (
+            <Marker
+              key={loc.id}
+              coordinate={{ latitude: loc.lat, longitude: loc.lng }}
+              pinColor={loc.color}
             >
-              <View style={[styles.pinDot, { backgroundColor: loc.color }]}>
-                {showQueues ? (
-                  <Text style={styles.pinText}>{loc.queue}</Text>
-                ) : (
-                  <MapPin size={12} color="#FFF" />
-                )}
-              </View>
-              {loc.queue > 20 && <View style={[styles.pinPulse, { borderColor: colors.error }]} />}
-            </TouchableOpacity>
+              <Callout tooltip>
+                <Card style={styles.calloutCard}>
+                  <Text style={styles.calloutTitle}>{loc.name}</Text>
+                  <View style={styles.calloutRow}>
+                    <Users size={14} color={colors.primary} />
+                    <Text style={[styles.calloutText, { color: colors.primary }]}>{loc.queue} in line</Text>
+                  </View>
+                  <View style={styles.calloutRow}>
+                    <Clock size={14} color={colors.secondaryText} />
+                    <Text style={styles.calloutSubtext}>{loc.waitTime} wait</Text>
+                  </View>
+                </Card>
+              </Callout>
+            </Marker>
           ))}
-        </View>
+        </MapView>
 
         <View style={styles.searchOverlay}>
-          <Card style={[styles.searchBar, { backgroundColor: theme === 'dark' ? 'rgba(30, 41, 59, 0.8)' : 'rgba(255,255,255,0.9)' }]}>
+          <Card style={[styles.searchBar, { backgroundColor: theme === 'dark' ? 'rgba(30, 41, 59, 0.95)' : 'rgba(255,255,255,0.95)' }]}>
             <Search size={20} color={colors.secondaryText} />
             <TextInput 
-              placeholder="Search offices or buildings..."
+              placeholder="Search buildings..."
               style={[styles.searchInput, { color: colors.text }]}
               placeholderTextColor={colors.secondaryText}
               value={search}
@@ -72,18 +212,28 @@ export default function CampusScreen() {
           </Card>
         </View>
 
-        <TouchableOpacity style={[styles.gpsButton, { backgroundColor: colors.primary }]}>
-          <Navigation size={24} color="#FFF" />
+        <TouchableOpacity 
+          onPress={refreshLocation}
+          style={[styles.gpsButton, { backgroundColor: colors.primary }]}
+        >
+          {isRefreshing ? <RefreshCw size={24} color="#FFF" /> : <Navigation size={24} color="#FFF" />}
         </TouchableOpacity>
       </View>
 
       <View style={styles.listSection}>
-        <View style={styles.smartTip}>
-          <TrendingDown size={18} color={colors.success} />
-          <Text style={[styles.tipText, { color: colors.success }]}>
-            Smart Tip: Senate House queue is decreasing. Best time to visit is in 30 mins!
-          </Text>
-        </View>
+        {errorMsg ? (
+          <View style={[styles.smartTip, { backgroundColor: colors.error + '10' }]}>
+            <AlertTriangle size={18} color={colors.error} />
+            <Text style={[styles.tipText, { color: colors.error }]}>{errorMsg}</Text>
+          </View>
+        ) : (
+          <View style={styles.smartTip}>
+            <TrendingDown size={18} color={colors.success} />
+            <Text style={[styles.tipText, { color: colors.success }]}>
+              {userLocation ? 'GPS Live: Nearby office wait times updated.' : 'Finding your location...'}
+            </Text>
+          </View>
+        )}
 
         <View style={styles.listHeader}>
           <Text style={styles.sectionTitle}>{showQueues ? 'Live Queue Status' : 'Nearby Locations'}</Text>
@@ -93,8 +243,12 @@ export default function CampusScreen() {
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
         >
-          {LOCATIONS.filter(l => l.name.toLowerCase().includes(search.toLowerCase())).map((item) => (
-            <TouchableOpacity key={item.id} activeOpacity={0.8}>
+          {landmarks.filter(l => l.name.toLowerCase().includes(search.toLowerCase())).map((item) => (
+            <TouchableOpacity 
+              key={item.id} 
+              activeOpacity={0.8}
+              onPress={() => focusBuilding(item.lat, item.lng)}
+            >
               <Card style={styles.locationCard}>
                 <View style={[styles.iconBox, { backgroundColor: item.color + '15' }]}>
                   {showQueues ? <Users size={22} color={item.color} /> : <MapPin size={22} color={item.color} />}
@@ -102,12 +256,12 @@ export default function CampusScreen() {
                 <View style={styles.locationInfo}>
                   <Text style={styles.locationName}>{item.name}</Text>
                   <Text style={[styles.locationType, { color: colors.secondaryText }]}>
-                    {item.type} • {item.distance}
+                    {item.type} • {getDistanceText(item.lat, item.lng)}
                   </Text>
                 </View>
                 {showQueues && (
                   <View style={styles.queueStats}>
-                    <Text style={[styles.queueCount, { color: item.queue > 25 ? colors.error : colors.text }]}>{item.queue} in line</Text>
+                    <Text style={[styles.queueCount, { color: (item.queue || 0) > 25 ? colors.error : colors.text }]}>{item.queue} in line</Text>
                     <View style={styles.timeInfo}>
                       <Clock size={12} color={colors.secondaryText} />
                       <Text style={[styles.waitTime, { color: colors.secondaryText }]}>{item.waitTime}</Text>
@@ -129,41 +283,40 @@ export default function CampusScreen() {
 }
 
 const styles = StyleSheet.create({
-  mapPlaceholder: {
+  mapContainer: {
     height: '45%',
     width: '100%',
     position: 'relative',
-    overflow: 'hidden',
   },
-  mapGrid: {
-    flex: 1,
+  map: {
+    ...StyleSheet.absoluteFillObject,
   },
-  mapPin: {
-    position: 'absolute',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  pinDot: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 2,
+  calloutCard: {
+    width: 200,
+    padding: 12,
+    borderRadius: 16,
+    borderWidth: 0,
     elevation: 4,
   },
-  pinText: {
-    color: '#FFF',
-    fontSize: 10,
-    fontWeight: '900',
+  calloutTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    marginBottom: 8,
   },
-  pinPulse: {
-    position: 'absolute',
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    borderWidth: 2,
-    opacity: 0.3,
+  calloutRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 4,
+  },
+  calloutText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  calloutSubtext: {
+    fontSize: 11,
+    fontWeight: '600',
+    opacity: 0.6,
   },
   searchOverlay: {
     position: 'absolute',

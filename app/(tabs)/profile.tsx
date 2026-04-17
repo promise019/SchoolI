@@ -80,7 +80,7 @@ export default function ProfileScreen() {
             icon={FileText} 
             title="Academic Records" 
             subtitle="Transcripts and semester results"
-            onPress={() => {}} 
+            onPress={() => router.push('/services/academics' as any)} 
             color="#F59E0B" // Amber
           />
         </View>
@@ -96,7 +96,7 @@ export default function ProfileScreen() {
           <MenuLink 
             icon={ShieldCheck} 
             title="Privacy" 
-            onPress={() => {}} 
+            onPress={() => router.push('/settings/privacy')} 
             color={colors.secondaryText}
           />
           <MenuLink 

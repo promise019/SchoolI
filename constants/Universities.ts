@@ -8,6 +8,20 @@ export interface University {
   name: string;
   fullName: string;
   location: string;
+  coordinates: {
+    lat: number;
+    lng: number;
+  };
+  landmarks: {
+    id: string;
+    name: string;
+    type: string;
+    lat: number;
+    lng: number;
+    color: string;
+    queue?: number;
+    waitTime?: string;
+  }[];
   docs: string[];
   processes: {
     id: string;
@@ -27,6 +41,13 @@ export const UNIVERSITIES: University[] = [
     name: 'UniUyo',
     fullName: 'University of Uyo',
     location: 'Uyo, Akwa Ibom State',
+    coordinates: { lat: 5.0416, lng: 7.9142 },
+    landmarks: [
+      { id: '1', name: 'University Library', type: 'Academic', lat: 5.0410, lng: 7.9130, color: '#6366F1' },
+      { id: '2', name: 'Senate House', type: 'Administrative', lat: 5.0425, lng: 7.9150, color: '#F59E0B' },
+      { id: '3', name: 'ICT Center', type: 'Technical', lat: 5.0400, lng: 7.9120, color: '#8B5CF6' },
+      { id: '4', name: 'Student Union Building', type: 'Social', lat: 5.0430, lng: 7.9160, color: '#EC4899' },
+    ],
     docs: [
       'Admission Letter',
       'JAMB Result Slip',
@@ -69,6 +90,11 @@ export const UNIVERSITIES: University[] = [
     name: 'UniCross',
     fullName: 'Cross River University of Technology',
     location: 'Calabar, Cross River State',
+    coordinates: { lat: 4.9745, lng: 8.3475 },
+    landmarks: [
+      { id: '1', name: 'Admin Block', type: 'Administrative', lat: 4.9740, lng: 8.3470, color: '#F59E0B' },
+      { id: '2', name: 'ETF Hall', type: 'Academic', lat: 4.9750, lng: 8.3480, color: '#6366F1' },
+    ],
     docs: [
       'JAMB Admission Letter',
       'State of Origin Certificate',
@@ -97,6 +123,11 @@ export const UNIVERSITIES: University[] = [
     name: 'UniCal',
     fullName: 'University of Calabar',
     location: 'Calabar, Cross River State',
+    coordinates: { lat: 4.9536, lng: 8.3444 },
+    landmarks: [
+      { id: '1', name: 'Senate Chambers', type: 'Administrative', lat: 4.9530, lng: 8.3440, color: '#F59E0B' },
+      { id: '2', name: 'Medical School', type: 'Academic', lat: 4.9550, lng: 8.3450, color: '#10B981' },
+    ],
     docs: [
       'Post-UTME Screening Result',
       'LGA Identification',

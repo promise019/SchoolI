@@ -58,7 +58,10 @@ export default function LoginScreen() {
               secureTextEntry
             />
             
-            <TouchableOpacity style={styles.forgotPass}>
+            <TouchableOpacity 
+              onPress={() => router.push('/auth/forgot-password' as any)}
+              style={styles.forgotPass}
+            >
               <Text style={[styles.forgotLabel, { color: colors.primary }]}>
                 Forgot Password?
               </Text>
@@ -79,7 +82,7 @@ export default function LoginScreen() {
 
             <Button 
                title="Request Access" 
-               onPress={() => {}} 
+               onPress={() => router.push('/auth/request-access' as any)} 
                variant="outline"
              />
 
