@@ -1,14 +1,14 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-// Mock storage for demo purposes
-const MockStorage = {
-  getItem: async (key: string) => null,
-  setItem: async (key: string, value: string) => {},
-};
-const AsyncStorage = MockStorage;
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { api } from '../services/api';
+import { socketService } from '../services/socketService';
 import { UNIVERSITIES, University } from '../constants/Universities';
 
 interface UserInfo {
   name: string;
+  fullName?: string;
+  studentId?: string;
+  id?: string;
   image?: string;
   gender: 'male' | 'female' | 'other';
 }
@@ -48,12 +48,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       try {
         const savedUni = await AsyncStorage.getItem('selected_uni');
         if (savedUni) {
-          const found = UNIVERSITIES.find(u => u.id === savedUni);
+          const found = UNIVERSITIES.find((u: University) => u.id === savedUni);
           if (found) setUniv(found);
         }
         
-        const auth = await AsyncStorage.getItem('is_authenticated');
-        if (auth === 'true') setIsAuthenticated(true);
+        const token = await AsyncStorage.getItem('jwt_token');
+        if (token) {
+          try {
+            const profileData = await api.getProfile();
+            setUser({
+              name: profileData.fullName || 'User',
+              fullName: profileData.fullName,
+              studentId: profileData.studentId,
+              id: profileData._id,
+              gender: 'male',
+            });
+            setIsAuthenticated(true);
+            socketService.connect();
+            if (profileData._id) {
+              socketService.joinRoom(profileData._id); // Join personal room
+            }
+          } catch (apiErr) {
+            console.error('Failed to validate token via API:', apiErr);
+            // Optionally clear token if unauthorized, but keep simple for now
+            setIsAuthenticated(false);
+          }
+        }
       } catch (e) {
         console.error('Failed to load app state', e);
       } finally {
@@ -71,7 +91,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const updateAuth = async (auth: boolean) => {
     setIsAuthenticated(auth);
-    await AsyncStorage.setItem('is_authenticated', String(auth));
+    if (!auth) {
+      await AsyncStorage.removeItem('jwt_token');
+      socketService.disconnect();
+    }
   };
 
   return (

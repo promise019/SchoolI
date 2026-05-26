@@ -18,12 +18,13 @@ import { Colors } from '../../constants/Colors';
 import { useColorScheme, Image } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp } from '../../store/appContext';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import maleAvatar from '../../assets/images/avatar_male.png';
 import femaleAvatar from '../../assets/images/avatar_female.png';
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
-  const { user, themeOverride } = useApp();
+  const { user, themeOverride, setIsAuthenticated } = useApp();
   const systemTheme = useColorScheme() ?? 'light';
   const theme = themeOverride ?? systemTheme;
   const colors = Colors[theme];
@@ -118,7 +119,7 @@ export default function ProfileScreen() {
 
         <TouchableOpacity 
           style={[styles.logoutButton, { backgroundColor: colors.error + '15' }]} 
-          onPress={() => router.replace('/(auth)/index' as any)}
+          onPress={() => setIsAuthenticated(false)}
         >
           <LogOut size={20} color={colors.error} />
           <Text style={[styles.logoutText, { color: colors.error }]}>Sign Out from SchoolI</Text>

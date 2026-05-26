@@ -16,6 +16,7 @@ import {
   HelpCircle
 } from 'lucide-react-native';
 import { router } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useApp } from '../../store/appContext';
 import { UNIVERSITIES } from '../../constants/Universities';
 import { Colors } from '../../constants/Colors';
@@ -54,9 +55,9 @@ export default function SettingsScreen() {
     </TouchableOpacity>
   );
 
-  const handleLogout = () => {
-    setIsAuthenticated(false);
-    router.replace('/(auth)');
+  const handleLogout = async () => {
+    // setIsAuthenticated calls updateAuth which removes the token and disconnects socket
+    await setIsAuthenticated(false);
   };
 
   return (

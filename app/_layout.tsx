@@ -1,4 +1,4 @@
-import { Stack } from "expo-router";
+import { Stack, useRouter, useSegments } from "expo-router";
 import { useColorScheme } from "react-native";
 import { Colors } from "../constants/Colors";
 import { AppProvider } from '../store/appContext';
@@ -12,9 +12,27 @@ SplashScreen.preventAutoHideAsync();
 import { useApp } from '../store/appContext';
 
 function RootLayoutNav() {
-  const { themeOverride } = useApp();
+  const { themeOverride, isAuthenticated, isLoading } = useApp();
   const systemTheme = useColorScheme() ?? 'light';
   const theme = themeOverride ?? systemTheme;
+  const router = useRouter();
+  const segments = useSegments();
+
+  useEffect(() => {
+    if (isLoading) return;
+
+    // List of public route segments that don't require authentication
+    const publicSegments = ['(auth)', 'auth', 'explore'];
+    const inPublicGroup = segments[0] && publicSegments.includes(segments[0]);
+
+    if (!isAuthenticated && !inPublicGroup) {
+      // Signed out — redirect to login
+      router.replace('/(auth)');
+    } else if (isAuthenticated && inPublicGroup) {
+      // Signed in but on auth screen — redirect to app
+      router.replace('/(tabs)');
+    }
+  }, [isAuthenticated, isLoading, segments]);
 
   return (
     <Stack

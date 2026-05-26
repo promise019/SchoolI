@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { StyleSheet, ScrollView, TouchableOpacity, KeyboardAvoidingView, Platform, Alert } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { StyleSheet, ScrollView, TouchableOpacity, KeyboardAvoidingView, Platform, Alert, ActivityIndicator } from 'react-native';
 import { Text, View, ScreenContainer, Card } from '../../components/Themed';
 import { Input } from '../../components/Input';
 import { Button } from '../../components/Button';
@@ -13,28 +13,60 @@ import {
 import { router } from 'expo-router';
 import { Colors } from '../../constants/Colors';
 import { useColorScheme } from 'react-native';
+import { api } from '../../services/api';
 
 export default function ForgotPasswordScreen() {
   const [isSuccess, setIsSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
   const [studentId, setStudentId] = useState('');
   const [email, setEmail] = useState('');
+  const [checkingUser, setCheckingUser] = useState(false);
+  const [userCheck, setUserCheck] = useState<{exists: boolean | null, fullName?: string}>({ exists: null });
+  const checkTimeout = useRef<any>(null);
 
   const theme = useColorScheme() ?? 'light';
   const colors = Colors[theme];
 
-  const handleSubmit = () => {
+  useEffect(() => {
+    if (!studentId || studentId.trim() === '') {
+      setUserCheck({ exists: null });
+      return;
+    }
+
+    if (checkTimeout.current) clearTimeout(checkTimeout.current);
+    
+    setCheckingUser(true);
+    checkTimeout.current = setTimeout(async () => {
+      try {
+        const result = await api.checkUser(studentId.trim());
+        setUserCheck({ exists: result.exists, fullName: result.fullName });
+      } catch (e) {
+        setUserCheck({ exists: null });
+      } finally {
+        setCheckingUser(false);
+      }
+    }, 500);
+
+    return () => {
+      if (checkTimeout.current) clearTimeout(checkTimeout.current);
+    };
+  }, [studentId]);
+
+  const handleSubmit = async () => {
     if (!studentId || !email) {
       Alert.alert("Required Fields", "Please enter both your Student ID and Registered Email.");
       return;
     }
 
     setLoading(true);
-    // Simulate API request
-    setTimeout(() => {
-      setLoading(false);
+    try {
+      await api.forgotPassword({ studentId, email });
       setIsSuccess(true);
-    }, 1800);
+    } catch (error: any) {
+      Alert.alert('Request Failed', error.message || 'An error occurred submitting your request.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   if (isSuccess) {
@@ -103,6 +135,23 @@ export default function ForgotPasswordScreen() {
               autoCapitalize="characters"
               leftIcon={<Hash size={18} color={colors.secondaryText} />}
             />
+            {checkingUser ? (
+              <View style={styles.checkMessage}>
+                <ActivityIndicator size="small" color={colors.primary} />
+                <Text style={[styles.checkText, { color: colors.secondaryText, marginLeft: 8 }]}>Checking ID...</Text>
+              </View>
+            ) : userCheck.exists === true ? (
+              <View style={styles.checkMessage}>
+                <CheckCircle size={14} color={colors.success} />
+                <Text style={[styles.checkText, { color: colors.success, marginLeft: 6 }]}>Account found: {userCheck.fullName}</Text>
+              </View>
+            ) : userCheck.exists === false ? (
+              <View style={styles.checkMessage}>
+                <Info size={14} color={colors.error} />
+                <Text style={[styles.checkText, { color: colors.error, marginLeft: 6 }]}>No account found with this ID</Text>
+              </View>
+            ) : null}
+
             <Input 
               label="Registered Email"
               placeholder="e.g. student@university.edu.ng"
@@ -182,6 +231,17 @@ const styles = StyleSheet.create({
   },
   form: {
     width: '100%',
+  },
+  checkMessage: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: -4,
+    marginBottom: 12,
+    marginLeft: 4,
+  },
+  checkText: {
+    fontSize: 12,
+    fontWeight: '600',
   },
   submitBtn: {
     marginTop: 12,

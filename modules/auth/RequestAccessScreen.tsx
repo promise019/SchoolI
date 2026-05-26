@@ -18,6 +18,7 @@ import { router } from 'expo-router';
 import { Colors } from '../../constants/Colors';
 import { useColorScheme } from 'react-native';
 import { UNIVERSITIES } from '../../constants/Universities';
+import { api } from '../../services/api';
 
 export default function RequestAccessScreen() {
   const [isSuccess, setIsSuccess] = useState(false);
@@ -33,18 +34,24 @@ export default function RequestAccessScreen() {
   const theme = useColorScheme() ?? 'light';
   const colors = Colors[theme];
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!formData.fullName || !formData.email || !formData.university) {
       Alert.alert("Required Fields", "Please fill in all mandatory fields.");
       return;
     }
 
     setLoading(true);
-    // Simulate API request
-    setTimeout(() => {
-      setLoading(false);
+    try {
+      await api.signup({
+        ...formData,
+        password: 'password123'
+      });
       setIsSuccess(true);
-    }, 2000);
+    } catch (error: any) {
+      Alert.alert('Request Failed', error.message || 'An error occurred submitting your request.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   if (isSuccess) {

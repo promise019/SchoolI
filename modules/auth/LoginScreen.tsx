@@ -7,21 +7,42 @@ import { router } from 'expo-router';
 import { Colors } from '../../constants/Colors';
 import { useColorScheme } from 'react-native';
 
+import { Eye, EyeOff } from 'lucide-react-native';
+import { api } from '../../services/api';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useApp } from '../../store/appContext';
+import { Alert } from 'react-native';
+
 import logoImg from '../../assets/images/splash-icon.png';
 
 export default function LoginScreen() {
   const [studentId, setStudentId] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const theme = useColorScheme() ?? 'light';
   const colors = Colors[theme];
 
-  const handleLogin = () => {
+  const { setIsAuthenticated } = useApp();
+
+  const handleLogin = async () => {
+    if (!studentId || !password) {
+      Alert.alert('Error', 'Please enter both Student ID and Password');
+      return;
+    }
+
     setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
+    try {
+      const response = await api.login({ studentId, password });
+      await AsyncStorage.setItem('jwt_token', response.token);
+      setIsAuthenticated(true);
       router.replace('/(tabs)' as any);
-    }, 1500);
+    } catch (error: any) {
+      console.error('Login Failed with error:', error);
+      Alert.alert('Login Failed', error.message || 'An error occurred during login');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -57,7 +78,16 @@ export default function LoginScreen() {
               placeholder="••••••••"
               value={password}
               onChangeText={setPassword}
-              secureTextEntry
+              secureTextEntry={!showPassword}
+              rightIcon={
+                <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
+                  {showPassword ? (
+                    <EyeOff size={20} color={colors.secondaryText} />
+                  ) : (
+                    <Eye size={20} color={colors.secondaryText} />
+                  )}
+                </TouchableOpacity>
+              }
             />
             
             <TouchableOpacity 

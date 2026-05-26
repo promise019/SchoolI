@@ -15,6 +15,7 @@ interface InputProps extends TextInputProps {
   error?: string;
   containerStyle?: ViewStyle;
   leftIcon?: React.ReactNode;
+  rightIcon?: React.ReactNode;
 }
 
 export function Input({ 
@@ -22,6 +23,7 @@ export function Input({
   error, 
   containerStyle, 
   leftIcon,
+  rightIcon,
   ...props 
 }: InputProps) {
   const theme = useColorScheme() ?? 'light';
@@ -52,6 +54,7 @@ export function Input({
           placeholderTextColor={colors.secondaryText}
           {...props}
         />
+        {rightIcon && <View style={styles.rightIconBox}>{rightIcon}</View>}
       </View>
       {error && (
         <Text style={[styles.errorText, { color: colors.error }]}>{error}</Text>
@@ -83,6 +86,9 @@ const styles = StyleSheet.create({
   },
   iconBox: {
     marginRight: 12,
+  },
+  rightIconBox: {
+    marginLeft: 12,
   },
   input: {
     flex: 1,
