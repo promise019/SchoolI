@@ -3,8 +3,10 @@ import { useColorScheme } from "react-native";
 import { Colors } from "../constants/Colors";
 import { AppProvider } from '../store/appContext';
 import * as SplashScreen from 'expo-splash-screen';
+import * as Notifications from 'expo-notifications';
 import { useEffect } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { notificationService } from '../services/notificationService';
 
 // Keep the splash screen visible while we fetch resources
 SplashScreen.preventAutoHideAsync();
@@ -19,6 +21,7 @@ function RootLayoutNav() {
   const segments = useSegments();
 
   useEffect(() => {
+    notificationService.initHandler();
     if (isLoading) return;
 
     // List of public route segments that don't require authentication
@@ -31,6 +34,24 @@ function RootLayoutNav() {
     } else if (isAuthenticated && inPublicGroup) {
       // Signed in but on auth screen — redirect to app
       router.replace('/(tabs)');
+    }
+
+    if (isAuthenticated) {
+      notificationService.registerForPushNotificationsAsync().then(token => {
+        if (token) {
+          console.log('Registered for push notifications with token:', token);
+        }
+      });
+
+      // Listen for notification clicks
+      const subscription = Notifications.addNotificationResponseReceivedListener((response: Notifications.NotificationResponse) => {
+        const data: any = response.notification.request.content.data;
+        if (data && (data.type === 'reminder' || data.type === 'suggestion')) {
+          router.push('/assistant/study-chat' as any);
+        }
+      });
+
+      return () => subscription.remove();
     }
   }, [isAuthenticated, isLoading, segments]);
 

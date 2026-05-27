@@ -38,6 +38,7 @@ import { chatWithStudyAI, imageToBase64, audioToBase64, ChatMessage } from '../.
 import { loadChatHistory, saveChatHistory, clearCache } from '../../services/aiCache';
 import { ResourceCard } from '../../components/ResourceCard';
 import { Resource } from '../../constants/Resources';
+import { notificationService } from '../../services/notificationService';
 
 interface Message {
   id: string;
@@ -111,12 +112,13 @@ export default function StudyChatScreen() {
     socketService.joinRoom(roomId);
     
     socketService.onNewMessage((msg) => {
-      // Only add message if it's from AI (user messages are added optimistically)
-      // or if it matches the current roomId
       if (msg.roomId === roomId && msg.role === 'ai') {
         setMessages(prev => {
-          // Avoid duplicate messages if already added
           if (prev.find(m => m.id === msg._id || m.text === msg.text)) return prev;
+          
+          // Detect Reminders/Suggestions in AI response
+          handleAIReminders(msg.text);
+          
           return [...prev, {
             id: msg._id || Date.now().toString(),
             text: msg.text,
@@ -135,14 +137,35 @@ export default function StudyChatScreen() {
 
   const fetchSessions = async () => {
     try {
-      // In a real app, use auth token
       const response = await fetch('http://localhost:3000/api/chat', {
-        headers: { 'Authorization': 'Bearer YOUR_TOKEN' } // Placeholder
+        headers: { 'Authorization': 'Bearer YOUR_TOKEN' } 
       });
       const data = await response.json();
       setChatSessions(data);
     } catch (error) {
       console.error("Error fetching sessions", error);
+    }
+  };
+
+  const handleAIReminders = (text: string) => {
+    const LowerText = text.toLowerCase();
+    
+    // Logic to detect if AI is setting a reminder or giving a strong suggestion
+    if (LowerText.includes('remind') || LowerText.includes("don't forget") || LowerText.includes('remember to')) {
+       // Schedule a test reminder for 10 seconds later for immediate demonstration
+       notificationService.scheduleAIReminder(
+         text.length > 100 ? text.substring(0, 97) + "..." : text, 
+         10
+       );
+       console.log('AI Reminder scheduled!');
+    }
+
+    if (LowerText.includes('recommend') || LowerText.includes('suggest') || LowerText.includes('try looking at')) {
+       // Send an instant suggestion notification
+       notificationService.sendAISuggestion(
+         "New Study Material",
+         "The AI has found some resources that might help your current topic."
+       );
     }
   };
 
