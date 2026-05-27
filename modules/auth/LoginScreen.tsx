@@ -11,7 +11,9 @@ import { Eye, EyeOff } from 'lucide-react-native';
 import { api } from '../../services/api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useApp } from '../../store/appContext';
-import { Alert } from 'react-native';
+import { Alert, View as DefaultView } from 'react-native';
+import { Fingerprint } from 'lucide-react-native';
+import { biometricService } from '../../services/biometricService';
 
 import logoImg from '../../assets/images/splash-icon.png';
 
@@ -23,7 +25,46 @@ export default function LoginScreen() {
   const theme = useColorScheme() ?? 'light';
   const colors = Colors[theme];
 
-  const { setIsAuthenticated } = useApp();
+  const { setIsAuthenticated, biometricEnabled } = useApp();
+  const [biometricSupported, setBiometricSupported] = useState(false);
+
+  React.useEffect(() => {
+    checkBiometrics();
+  }, []);
+
+  const checkBiometrics = async () => {
+    const isAvailable = await biometricService.isHardwareAvailable();
+    setBiometricSupported(isAvailable);
+    
+    // Auto-prompt if enabled
+    if (isAvailable && biometricEnabled) {
+      setTimeout(() => {
+        handleBiometricLogin();
+      }, 500);
+    }
+  };
+
+  const handleBiometricLogin = async () => {
+    const success = await biometricService.authenticate('Login with biometrics');
+    if (success) {
+      const credentials = await biometricService.getCredentials();
+      if (credentials) {
+        setLoading(true);
+        try {
+          const response = await api.login(credentials);
+          await AsyncStorage.setItem('jwt_token', response.token);
+          setIsAuthenticated(true);
+          router.replace('/(tabs)' as any);
+        } catch (error: any) {
+          Alert.alert('Login Failed', 'Biometric login failed. Please use your password.');
+        } finally {
+          setLoading(false);
+        }
+      } else {
+        Alert.alert('No Credentials', 'Please log in with your password once to enable biometric login.');
+      }
+    }
+  };
 
   const handleLogin = async () => {
     if (!studentId || !password) {
@@ -35,6 +76,12 @@ export default function LoginScreen() {
     try {
       const response = await api.login({ studentId, password });
       await AsyncStorage.setItem('jwt_token', response.token);
+      
+      // Save credentials for future biometric login if enabled
+      if (biometricEnabled) {
+        await biometricService.saveCredentials(studentId, password);
+      }
+
       setIsAuthenticated(true);
       router.replace('/(tabs)' as any);
     } catch (error: any) {
@@ -99,12 +146,22 @@ export default function LoginScreen() {
               </Text>
             </TouchableOpacity>
 
-            <Button 
-              title="Sign In" 
-              onPress={handleLogin} 
-              loading={loading}
-              style={styles.button}
-            />
+            <DefaultView style={styles.buttonRow}>
+              <Button 
+                title="Sign In" 
+                onPress={handleLogin} 
+                loading={loading}
+                style={[styles.button, { flex: 1 }]}
+              />
+              {biometricSupported && biometricEnabled && (
+                <TouchableOpacity 
+                  onPress={handleBiometricLogin}
+                  style={[styles.biometricBtn, { backgroundColor: colors.primary + '15', borderColor: colors.primary }]}
+                >
+                  <Fingerprint size={28} color={colors.primary} />
+                </TouchableOpacity>
+              )}
+            </DefaultView>
 
             <View style={styles.divider}>
               <View style={[styles.line, { backgroundColor: colors.border }]} />
@@ -181,6 +238,19 @@ const styles = StyleSheet.create({
   },
   button: {
     elevation: 4,
+  },
+  buttonRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  biometricBtn: {
+    width: 54,
+    height: 54,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
   },
   divider: {
     flexDirection: 'row',

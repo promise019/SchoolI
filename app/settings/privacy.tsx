@@ -22,7 +22,7 @@ import { useApp } from '../../store/appContext';
 
 export default function PrivacyScreen() {
   const insets = useSafeAreaInsets();
-  const { themeOverride } = useApp();
+  const { themeOverride, biometricEnabled, setBiometricEnabled } = useApp();
   const systemTheme = useColorScheme() ?? 'light';
   const theme = themeOverride ?? systemTheme;
   const colors = Colors[theme];
@@ -33,12 +33,42 @@ export default function PrivacyScreen() {
     locationSharing: false,
     aiDataAnalysis: true,
     sharePerformance: false,
-    biometricLock: true,
     twoFactorAuth: false,
   });
 
   const toggleSetting = (key: keyof typeof privacySettings) => {
     setPrivacySettings(prev => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const handleBiometricToggle = async () => {
+    if (!biometricEnabled) {
+      // Trying to enable
+      try {
+        const { biometricService } = await import('../../services/biometricService');
+        const isAvailable = await biometricService.isHardwareAvailable();
+        
+        if (!isAvailable) {
+          Alert.alert('Not Available', 'Biometric authentication is not supported or set up on this device.');
+          return;
+        }
+
+        const success = await biometricService.authenticate('Verify your identity to enable biometric unlock');
+        if (success) {
+          setBiometricEnabled(true);
+          Alert.alert('Success', 'Biometric unlock is now enabled. You will be asked to save your credentials next time you sign in.');
+        }
+      } catch (error) {
+        console.error('Error enabling biometrics:', error);
+        Alert.alert('Error', 'Failed to enable biometric unlock.');
+      }
+    } else {
+      // Trying to disable
+      setBiometricEnabled(false);
+      try {
+        const { biometricService } = await import('../../services/biometricService');
+        await biometricService.clearCredentials();
+      } catch (e) {}
+    }
   };
 
   const SettingItem = ({ icon: Icon, title, subtitle, value, onValueChange, type = 'toggle', onPress, color }: any) => (
@@ -156,8 +186,8 @@ export default function PrivacyScreen() {
             icon={Lock} 
             title="Biometric Lock" 
             subtitle="Unlock SchoolI using Fingerprint/FaceID" 
-            value={privacySettings.biometricLock}
-            onValueChange={() => toggleSetting('biometricLock')}
+            value={biometricEnabled}
+            onValueChange={handleBiometricToggle}
           />
           <View style={[styles.divider, { backgroundColor: colors.border + '30' }]} />
           <SettingItem 

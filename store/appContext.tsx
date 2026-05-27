@@ -25,6 +25,8 @@ interface AppState {
   setThemeOverride: (theme: 'light' | 'dark' | null) => void;
   language: string;
   setLanguage: (lang: string) => void;
+  biometricEnabled: boolean;
+  setBiometricEnabled: (enabled: boolean) => void;
 }
 
 const AppContext = createContext<AppState | undefined>(undefined);
@@ -36,6 +38,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [userProgress, setUserProgress] = useState(35); // Initial mock progress
   const [themeOverride, setTheme] = useState<'light' | 'dark' | null>(null);
   const [language, setLang] = useState('English');
+  const [biometricEnabled, setBiometric] = useState(false);
   const [user, setUser] = useState<UserInfo>({
     name: 'John Doe',
     gender: 'male',
@@ -50,6 +53,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (savedUni) {
           const found = UNIVERSITIES.find((u: University) => u.id === savedUni);
           if (found) setUniv(found);
+        }
+
+        const savedBiometric = await AsyncStorage.getItem('biometric_enabled');
+        if (savedBiometric) {
+          setBiometric(savedBiometric === 'true');
         }
         
         const token = await AsyncStorage.getItem('jwt_token');
@@ -109,7 +117,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       themeOverride,
       setThemeOverride: setTheme,
       language,
-      setLanguage: setLang
+      setLanguage: setLang,
+      biometricEnabled,
+      setBiometricEnabled: async (enabled: boolean) => {
+        setBiometric(enabled);
+        await AsyncStorage.setItem('biometric_enabled', String(enabled));
+      }
     }}>
       {children}
     </AppContext.Provider>

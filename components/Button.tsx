@@ -6,6 +6,7 @@ import {
   ActivityIndicator, 
   ViewStyle, 
   TextStyle,
+  StyleProp,
   useColorScheme 
 } from 'react-native';
 import { Colors } from '../constants/Colors';
@@ -16,8 +17,8 @@ interface ButtonProps {
   variant?: 'primary' | 'secondary' | 'outline' | 'danger';
   loading?: boolean;
   disabled?: boolean;
-  style?: ViewStyle;
-  textStyle?: TextStyle;
+  style?: StyleProp<ViewStyle>;
+  textStyle?: StyleProp<TextStyle>;
 }
 
 export function Button({ 
