@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { StyleSheet, ScrollView, TouchableOpacity, TextInput, KeyboardAvoidingView, Platform, Image, View as DefaultView, ActivityIndicator, Alert } from 'react-native';
+import { StyleSheet, ScrollView, TouchableOpacity, TextInput, KeyboardAvoidingView, Platform, Image, View as DefaultView, ActivityIndicator, Alert, Clipboard } from 'react-native';
 import { Text, View, Card, ScreenContainer } from '../../components/Themed';
 import { 
   ChevronLeft, 
@@ -22,7 +22,11 @@ import {
   MoreVertical,
   History,
   MessageSquare,
-  User
+  User,
+  Copy,
+  Edit3,
+  File,
+  Paperclip
 } from 'lucide-react-native';
 import { router } from 'expo-router';
 import { socketService } from '../../services/socketService';
@@ -34,6 +38,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import { Audio } from 'expo-av';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { chatWithStudyAI, imageToBase64, audioToBase64, ChatMessage } from '../../services/aiService';
 import { loadChatHistory, saveChatHistory, clearCache } from '../../services/aiCache';
 import { ResourceCard } from '../../components/ResourceCard';
@@ -46,8 +51,16 @@ interface Message {
   sender: 'user' | 'ai';
   image?: string;
   audio?: string;
+  file?: { uri: string; name: string; type: string };
   resources?: Resource[];
 }
+
+type PendingFile = {
+  uri: string;
+  name: string;
+  mimeType: string;
+  kind: 'image' | 'audio' | 'file';
+};
 
 function AudioWaveform({ color, progress = 0 }: { color: string; progress?: number }) {
   return (
@@ -90,13 +103,15 @@ export default function StudyChatScreen() {
   const [isTyping, setIsTyping] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
-  const [recording, setRecording] = useState<Audio.Recording | null>(null);
+  const recordingRef = useRef<Audio.Recording | null>(null);
   const [pendingAudio, setPendingAudio] = useState<string | null>(null);
   const [sound, setSound] = useState<Audio.Sound | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [playingUri, setPlayingUri] = useState<string | null>(null);
   const [playbackPos, setPlaybackPos] = useState(0);
   const [playbackDur, setPlaybackDur] = useState(0);
+  const [pendingFile, setPendingFile] = useState<PendingFile | null>(null);
+  const [pendingCaption, setPendingCaption] = useState('');
   
   const [roomId, setRoomId] = useState<string>(Date.now().toString());
   const [historyVisible, setHistoryVisible] = useState(false);
@@ -136,9 +151,11 @@ export default function StudyChatScreen() {
   }, [roomId]);
 
   const fetchSessions = async () => {
+    const BASE = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.196.236:3000/api';
     try {
-      const response = await fetch('http://localhost:3000/api/chat', {
-        headers: { 'Authorization': 'Bearer YOUR_TOKEN' } 
+      const token = await AsyncStorage.getItem('jwt_token');
+      const response = await fetch(`${BASE}/chat`, {
+        headers: { 'Authorization': `Bearer ${token}` } 
       });
       const data = await response.json();
       setChatSessions(data);
@@ -179,10 +196,11 @@ export default function StudyChatScreen() {
     setRoomId(sid);
     setHistoryVisible(false);
     setIsTyping(true);
-    
+    const BASE = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.196.236:3000/api';
     try {
-      const response = await fetch(`http://localhost:3000/api/chat/${sid}`, {
-        headers: { 'Authorization': 'Bearer YOUR_TOKEN' }
+      const token = await AsyncStorage.getItem('jwt_token');
+      const response = await fetch(`${BASE}/chat/${sid}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await response.json();
       setMessages(data.map((m: any) => ({
@@ -198,8 +216,8 @@ export default function StudyChatScreen() {
     }
   };
 
-  const handleSend = async (text: string = input, imageUri?: string, audioUri?: string) => {
-    if (!text.trim() && !imageUri && !audioUri) return;
+  const handleSend = async (text: string = input, imageUri?: string, audioUri?: string, fileAttachment?: PendingFile) => {
+    if (!text.trim() && !imageUri && !audioUri && !fileAttachment) return;
 
     const userMsgId = Date.now().toString();
     const newUserMsg: Message = { 
@@ -207,19 +225,59 @@ export default function StudyChatScreen() {
       text: text, 
       sender: 'user', 
       image: imageUri,
-      audio: audioUri
+      audio: audioUri,
+      file: fileAttachment && fileAttachment.kind === 'file' ? { uri: fileAttachment.uri, name: fileAttachment.name, type: fileAttachment.mimeType } : undefined,
     };
     
     setMessages(prev => [...prev, newUserMsg]);
     setInput('');
     setIsTyping(true);
 
-    // Send to Socket Backend
-    socketService.sendMessage(roomId, text);
+    // Send text + file context to AI via Socket
+    const socketText = text.trim() || (fileAttachment ? `Please analyze this ${fileAttachment.kind}: ${fileAttachment.name}` : '');
+    socketService.sendMessage(roomId, socketText);
+  };
 
-    // Fallback/Parallel: Multimodal still uses local Gemini for now if needed, 
-    // or we could update backend to handle multimodal.
-    // For this task, focusing on the menu and history.
+  const handleLongPressMessage = (msg: Message) => {
+    if (msg.sender !== 'user') return;
+    const options = ['Copy Text', 'Edit & Resend', 'Cancel'];
+    Alert.alert('Message Options', undefined, [
+      {
+        text: 'Copy Text',
+        onPress: () => {
+          Clipboard.setString(msg.text);
+          Alert.alert('Copied', 'Message text copied to clipboard.');
+        },
+      },
+      {
+        text: 'Edit & Resend',
+        onPress: () => setInput(msg.text),
+      },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  };
+
+  const sendPendingFile = () => {
+    if (!pendingFile) return;
+    stopSound();
+    const caption = pendingCaption.trim();
+    if (pendingFile.kind === 'audio') {
+      handleSend(caption || 'Analyze this audio lecture for me and provide a summary.', undefined, pendingFile.uri);
+    } else if (pendingFile.kind === 'image') {
+      handleSend(caption || 'Analyze this study material.', pendingFile.uri);
+    } else {
+      handleSend(caption || `Please analyze this file: ${pendingFile.name}`, undefined, undefined, pendingFile);
+    }
+    setPendingFile(null);
+    setPendingCaption('');
+    setPlaybackPos(0);
+  };
+
+  const discardPendingFile = () => {
+    stopSound();
+    setPendingFile(null);
+    setPendingCaption('');
+    setPlaybackPos(0);
   };
 
   const playSound = async (uri: string) => {
@@ -311,31 +369,38 @@ export default function StudyChatScreen() {
 
   const startRecording = async () => {
     try {
-      const permission = await Audio.requestPermissionsAsync();
-      if (permission.status === 'granted') {
-        await Audio.setAudioModeAsync({
-          allowsRecordingIOS: true,
-          playsInSilentModeIOS: true,
-        });
-        const { recording } = await Audio.Recording.createAsync(
-          Audio.RecordingOptionsPresets.HIGH_QUALITY
-        );
-        setRecording(recording);
-        setIsRecording(true);
+      const { status } = await Audio.requestPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission needed', 'Microphone access is required to record audio.');
+        return;
       }
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+      });
+      const newRecording = new Audio.Recording();
+      await newRecording.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+      await newRecording.startAsync();
+      recordingRef.current = newRecording;
+      setIsRecording(true);
     } catch (err) {
       console.error('Failed to start recording', err);
+      Alert.alert('Recording Error', 'Could not start the microphone. Please try again.');
     }
   };
 
   const stopRecording = async () => {
-    if (!recording) return;
+    if (!recordingRef.current) return;
     setIsRecording(false);
-    await recording.stopAndUnloadAsync();
-    const uri = recording.getURI();
-    setRecording(null);
-    if (uri) {
-      setPendingAudio(uri);
+    try {
+      await recordingRef.current.stopAndUnloadAsync();
+      const uri = recordingRef.current.getURI();
+      if (uri) setPendingAudio(uri);
+    } catch (e) {
+      console.error('Stop recording error:', e);
+    } finally {
+      recordingRef.current = null;
+      await Audio.setAudioModeAsync({ allowsRecordingIOS: false });
     }
   };
 
@@ -359,9 +424,9 @@ export default function StudyChatScreen() {
       type: 'audio/*',
       copyToCacheDirectory: true
     });
-
     if (!result.canceled) {
-      handleSend("Explain the core concepts in this audio file.", undefined, result.assets[0].uri);
+      const asset = result.assets[0];
+      setPendingFile({ uri: asset.uri, name: asset.name, mimeType: asset.mimeType || 'audio/*', kind: 'audio' });
     }
   };
 
@@ -370,9 +435,9 @@ export default function StudyChatScreen() {
       allowsEditing: true,
       quality: 0.8,
     });
-
     if (!result.canceled) {
-      handleSend("Summarize this document/book page and highlight key terms.", result.assets[0].uri);
+      const asset = result.assets[0];
+      setPendingFile({ uri: asset.uri, name: 'Scanned Document', mimeType: 'image/jpeg', kind: 'image' });
     }
   };
 
@@ -381,9 +446,23 @@ export default function StudyChatScreen() {
       allowsEditing: true,
       quality: 0.8,
     });
-
     if (!result.canceled) {
-      handleSend("Analyze this study material.", result.assets[0].uri);
+      const asset = result.assets[0];
+      setPendingFile({ uri: asset.uri, name: asset.fileName || 'Image', mimeType: asset.mimeType || 'image/*', kind: 'image' });
+    }
+  };
+
+  const pickFile = async () => {
+    const result = await DocumentPicker.getDocumentAsync({
+      type: '*/*',
+      copyToCacheDirectory: true,
+    });
+    if (!result.canceled) {
+      const asset = result.assets[0];
+      const isAudio = (asset.mimeType || '').startsWith('audio');
+      const isImage = (asset.mimeType || '').startsWith('image');
+      const kind: PendingFile['kind'] = isAudio ? 'audio' : isImage ? 'image' : 'file';
+      setPendingFile({ uri: asset.uri, name: asset.name, mimeType: asset.mimeType || 'application/octet-stream', kind });
     }
   };
 
@@ -499,10 +578,12 @@ export default function StudyChatScreen() {
           onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}
         >
           {messages.map((msg) => (
-            <View 
-              key={msg.id} 
+            <TouchableOpacity
+              key={msg.id}
+              activeOpacity={msg.sender === 'user' ? 0.85 : 1}
+              onLongPress={() => handleLongPressMessage(msg)}
               style={[
-                styles.messageRow, 
+                styles.messageRow,
                 msg.sender === 'user' ? styles.userRow : styles.aiRow
               ]}
             >
@@ -544,10 +625,27 @@ export default function StudyChatScreen() {
                     </Text>
                   </TouchableOpacity>
                 )}
+                {msg.file && (
+                  <View style={[styles.fileBadge, { backgroundColor: msg.sender === 'user' ? 'rgba(255,255,255,0.2)' : colors.primary + '15' }]}>
+                    <File size={18} color={msg.sender === 'user' ? '#FFF' : colors.primary} />
+                    <Text style={[styles.fileNameText, { color: msg.sender === 'user' ? '#FFF' : colors.primary }]} numberOfLines={1}>
+                      {msg.file.name}
+                    </Text>
+                  </View>
+                )}
                 <Text style={[styles.messageText, { color: msg.sender === 'user' ? '#FFF' : colors.text }]}>
                   {msg.text}
                 </Text>
-                
+                {msg.sender === 'user' && (
+                  <View style={styles.msgActions}>
+                    <TouchableOpacity onPress={() => { Clipboard.setString(msg.text); Alert.alert('Copied!', 'Message copied to clipboard.'); }} style={styles.msgActionBtn}>
+                      <Copy size={11} color="rgba(255,255,255,0.6)" />
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => setInput(msg.text)} style={styles.msgActionBtn}>
+                      <Edit3 size={11} color="rgba(255,255,255,0.6)" />
+                    </TouchableOpacity>
+                  </View>
+                )}
                 {msg.resources && msg.resources.length > 0 && (
                   <View style={styles.resourcesContainer}>
                     <Text style={[styles.recTitle, { color: colors.secondaryText }]}>Recommended for you:</Text>
@@ -557,7 +655,7 @@ export default function StudyChatScreen() {
                   </View>
                 )}
               </View>
-            </View>
+            </TouchableOpacity>
           ))}
           {isTyping && (
             <View style={styles.aiRow}>
@@ -572,7 +670,45 @@ export default function StudyChatScreen() {
         </ScrollView>
 
         <View style={[styles.inputWrapper, { borderTopColor: colors.border }]}>
-          {pendingAudio ? (
+          {pendingFile ? (
+            <View style={[styles.pendingFileContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              {/* Top row: icon + file info + discard */}
+              <View style={styles.pendingFileRow}>
+                <View style={[styles.pendingFileIcon, { backgroundColor: colors.primary + '15' }]}>
+                  {pendingFile.kind === 'image' ? (
+                    <Image source={{ uri: pendingFile.uri }} style={styles.pendingImageThumb} />
+                  ) : pendingFile.kind === 'audio' ? (
+                    <Music size={22} color={colors.primary} />
+                  ) : (
+                    <File size={22} color={colors.primary} />
+                  )}
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.pendingText, { color: colors.text }]} numberOfLines={1}>{pendingFile.name}</Text>
+                  <Text style={[styles.pendingSubText, { color: colors.secondaryText }]}>
+                    {pendingFile.kind === 'audio' ? 'Audio file' : pendingFile.kind === 'image' ? 'Image' : 'Document'}
+                  </Text>
+                </View>
+                <TouchableOpacity onPress={discardPendingFile} style={[styles.actionRound, { backgroundColor: colors.error + '15' }]}>
+                  <Trash2 size={18} color={colors.error} />
+                </TouchableOpacity>
+              </View>
+              {/* Caption input + send */}
+              <View style={styles.captionRow}>
+                <TextInput
+                  placeholder="Add a message (optional)..."
+                  placeholderTextColor={colors.secondaryText}
+                  style={[styles.captionInput, { color: colors.text, borderColor: colors.border }]}
+                  value={pendingCaption}
+                  onChangeText={setPendingCaption}
+                  multiline
+                />
+                <TouchableOpacity onPress={sendPendingFile} style={[styles.actionRound, { backgroundColor: colors.primary }]}>
+                  <Send size={18} color="#FFF" />
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : pendingAudio ? (
              <View style={[styles.pendingContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
                 <TouchableOpacity onPress={discardPendingAudio} style={[styles.actionRound, { backgroundColor: colors.error + '15' }]}>
                   <Trash2 size={20} color={colors.error} />
@@ -604,6 +740,10 @@ export default function StudyChatScreen() {
 
             <TouchableOpacity onPress={pickAudioFile} style={styles.iconBtn}>
               <Music size={22} color={colors.primary} />
+            </TouchableOpacity>
+
+            <TouchableOpacity onPress={pickFile} style={styles.iconBtn}>
+              <Paperclip size={22} color={colors.primary} />
             </TouchableOpacity>
             
             <TextInput 
@@ -893,5 +1033,78 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 60,
+  },
+  msgActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 6,
+    marginTop: 6,
+    opacity: 0.8,
+  },
+  msgActionBtn: {
+    padding: 4,
+  },
+  fileBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 10,
+    borderRadius: 12,
+    marginBottom: 8,
+    gap: 8,
+    maxWidth: 220,
+  },
+  fileNameText: {
+    fontSize: 13,
+    fontWeight: '600',
+    flex: 1,
+  },
+  pendingFileContainer: {
+    borderRadius: 20,
+    borderWidth: 1,
+    padding: 14,
+    gap: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    elevation: 3,
+  },
+  pendingFileRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  pendingFileIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    overflow: 'hidden',
+  },
+  pendingImageThumb: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'cover',
+  },
+  pendingSubText: {
+    fontSize: 11,
+    marginTop: 2,
+    fontWeight: '500',
+  },
+  captionRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 10,
+  },
+  captionInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    fontSize: 14,
+    maxHeight: 80,
+    fontWeight: '500',
   },
 });

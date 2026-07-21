@@ -4,6 +4,7 @@ import { Colors } from "../constants/Colors";
 import { AppProvider } from '../store/appContext';
 import * as SplashScreen from 'expo-splash-screen';
 import * as Notifications from 'expo-notifications';
+import Constants from 'expo-constants';
 import { useEffect } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { notificationService } from '../services/notificationService';
@@ -43,15 +44,16 @@ function RootLayoutNav() {
         }
       });
 
-      // Listen for notification clicks
-      const subscription = Notifications.addNotificationResponseReceivedListener((response: Notifications.NotificationResponse) => {
-        const data: any = response.notification.request.content.data;
-        if (data && (data.type === 'reminder' || data.type === 'suggestion')) {
-          router.push('/assistant/study-chat' as any);
-        }
-      });
-
-      return () => subscription.remove();
+      // Listen for notification clicks (not available in Expo Go SDK 53+)
+      if (Constants.appOwnership !== 'expo') {
+        const subscription = Notifications.addNotificationResponseReceivedListener((response: Notifications.NotificationResponse) => {
+          const data: any = response.notification.request.content.data;
+          if (data && (data.type === 'reminder' || data.type === 'suggestion')) {
+            router.push('/assistant/study-chat' as any);
+          }
+        });
+        return () => subscription.remove();
+      }
     }
   }, [isAuthenticated, isLoading, segments]);
 

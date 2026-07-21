@@ -1,7 +1,6 @@
 import { io, Socket } from 'socket.io-client';
 
-// For Android emulator, use 10.0.2.2. For iOS, use localhost.
-const SOCKET_URL = 'http://localhost:3000'; 
+const SOCKET_URL = 'http://192.168.196.236:3000'; 
 
 class SocketService {
   private socket: Socket | null = null;
@@ -46,6 +45,12 @@ class SocketService {
   onNewMessage(callback: (message: any) => void) {
     if (this.socket) {
       this.socket.on('new_message', callback);
+    }
+  }
+  
+  onHostelUpdate(callback: (hostel: any) => void) {
+    if (this.socket) {
+      this.socket.on('hostel_updated', callback);
     }
   }
 

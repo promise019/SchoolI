@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // In Expo, EXPO_PUBLIC_ prefix is required for env vars to be available on the client.
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.25.236:3000/api';
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.196.236:3000/api';
 
 const getHeaders = async (isFormData = false) => {
   const token = await AsyncStorage.getItem('jwt_token');
@@ -73,4 +73,10 @@ export const api = {
   // Notifications
   getNotifications: () => apiFetch('/notifications', { method: 'GET' }),
   markNotificationRead: (notificationId: string) => apiFetch(`/notifications/${notificationId}/read`, { method: 'PUT' }),
+
+  // Hostels
+  getHostels: () => apiFetch('/hostels', { method: 'GET' }),
+  createHostel: (data: any) => apiFetch('/hostels', { method: 'POST', body: JSON.stringify(data) }),
+  updateHostelSpaces: (id: string, availableSpaces: number) => 
+    apiFetch(`/hostels/${id}/spaces`, { method: 'PUT', body: JSON.stringify({ availableSpaces }) }),
 };
