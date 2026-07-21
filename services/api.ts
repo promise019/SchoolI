@@ -79,4 +79,9 @@ export const api = {
   createHostel: (data: any) => apiFetch('/hostels', { method: 'POST', body: JSON.stringify(data) }),
   updateHostelSpaces: (id: string, availableSpaces: number) => 
     apiFetch(`/hostels/${id}/spaces`, { method: 'PUT', body: JSON.stringify({ availableSpaces }) }),
+
+  // Reviews
+  getReviews: () => apiFetch('/reviews', { method: 'GET' }),
+  submitReview: (data: { rating: number; text: string }) =>
+    apiFetch('/reviews', { method: 'POST', body: JSON.stringify(data) }),
 };

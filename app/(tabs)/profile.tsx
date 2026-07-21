@@ -11,7 +11,8 @@ import {
   ChevronRight,
   ShieldCheck,
   Bell,
-  Camera
+  Camera,
+  Star
 } from 'lucide-react-native';
 import { router } from 'expo-router';
 import { Colors } from '../../constants/Colors';
@@ -114,6 +115,13 @@ export default function ProfileScreen() {
             title="Account Settings" 
             onPress={() => router.push('/settings')} 
             color={colors.secondaryText}
+          />
+          <MenuLink 
+            icon={Star} 
+            title="Rate the App" 
+            subtitle="Share your feedback on the website"
+            onPress={() => router.push('/settings/review' as any)} 
+            color="#FBBF24"
           />
         </View>
 
