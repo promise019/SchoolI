@@ -1,4 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { API_URL } from '../../utils/config';
+import * as FileSystem from 'expo-file-system/legacy';
 import { StyleSheet, ScrollView, TouchableOpacity, TextInput, KeyboardAvoidingView, Platform, Image, View as DefaultView, ActivityIndicator, Alert, Clipboard } from 'react-native';
 import { Text, View, Card, ScreenContainer } from '../../components/Themed';
 import { 
@@ -151,7 +153,7 @@ export default function StudyChatScreen() {
   }, [roomId]);
 
   const fetchSessions = async () => {
-    const BASE = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.196.236:3000/api';
+    const BASE = API_URL;
     try {
       const token = await AsyncStorage.getItem('jwt_token');
       const response = await fetch(`${BASE}/chat`, {
@@ -196,7 +198,7 @@ export default function StudyChatScreen() {
     setRoomId(sid);
     setHistoryVisible(false);
     setIsTyping(true);
-    const BASE = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.196.236:3000/api';
+    const BASE = API_URL;
     try {
       const token = await AsyncStorage.getItem('jwt_token');
       const response = await fetch(`${BASE}/chat/${sid}`, {
@@ -233,9 +235,25 @@ export default function StudyChatScreen() {
     setInput('');
     setIsTyping(true);
 
-    // Send text + file context to AI via Socket
-    const socketText = text.trim() || (fileAttachment ? `Please analyze this ${fileAttachment.kind}: ${fileAttachment.name}` : '');
-    socketService.sendMessage(roomId, socketText);
+    // Convert file to Base64 so Study AI receives full file content (Images, Audio, PDF/Documents)
+    let fileData: { mimeType: string; base64: string; name?: string } | undefined = undefined;
+    const targetUri = imageUri || audioUri || (fileAttachment ? fileAttachment.uri : undefined);
+    const targetMime = imageUri ? 'image/jpeg' : audioUri ? 'audio/mp4' : (fileAttachment ? fileAttachment.mimeType : undefined);
+    const targetName = fileAttachment ? fileAttachment.name : (imageUri ? 'photo.jpg' : 'recording.m4a');
+
+    if (targetUri && targetMime) {
+      try {
+        const base64 = await FileSystem.readAsStringAsync(targetUri, { encoding: 'base64' });
+        if (base64) {
+          fileData = { mimeType: targetMime, base64, name: targetName };
+        }
+      } catch (err) {
+        console.error('Failed to convert attached file to base64 for AI:', err);
+      }
+    }
+
+    const socketText = text.trim() || (targetName ? `Please examine this attached file: ${targetName}` : '');
+    socketService.sendMessage(roomId, socketText, 'user', fileData);
   };
 
   const handleLongPressMessage = (msg: Message) => {

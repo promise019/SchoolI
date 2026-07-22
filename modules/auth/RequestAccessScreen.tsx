@@ -17,41 +17,72 @@ import {
 import { router } from 'expo-router';
 import { Colors } from '../../constants/Colors';
 import { useColorScheme } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useApp } from '../../store/appContext';
 import { UNIVERSITIES } from '../../constants/Universities';
 import { api } from '../../services/api';
+import { EmailConfirmationModal } from './EmailConfirmationModal';
 
 export default function RequestAccessScreen() {
   const [isSuccess, setIsSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [userType, setUserType] = useState<'student' | 'prospective'>('prospective');
+  const [assignedStudentId, setAssignedStudentId] = useState('');
   const [formData, setFormData] = useState({
     fullName: '',
     email: '',
     phone: '',
     studentId: '',
+    password: '',
     university: UNIVERSITIES[0].name
   });
 
+  const { setIsAuthenticated } = useApp();
   const theme = useColorScheme() ?? 'light';
   const colors = Colors[theme];
 
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+
   const handleSubmit = async () => {
-    if (!formData.fullName || !formData.email || !formData.university) {
-      Alert.alert("Required Fields", "Please fill in all mandatory fields.");
+    if (!formData.fullName || !formData.email || !formData.phone) {
+      Alert.alert("Required Fields", "Please fill in your Full Name, Email, and Phone Number.");
+      return;
+    }
+
+    if (userType === 'student' && !formData.studentId) {
+      Alert.alert("Student ID Required", "Enrolled students must enter their Student ID or Matric Number.");
       return;
     }
 
     setLoading(true);
     try {
-      await api.signup({
+      const response = await api.signup({
         ...formData,
-        password: 'password123'
+        studentId: userType === 'prospective' ? '' : formData.studentId,
+        password: formData.password || 'password123'
       });
-      setIsSuccess(true);
+
+      if (response.token) {
+        await AsyncStorage.setItem('jwt_token', response.token);
+      }
+
+      setAssignedStudentId(response.user?.studentId || 'PROSPECT');
+
+      if (response.requiresEmailConfirmation) {
+        setShowConfirmModal(true);
+      } else {
+        setIsSuccess(true);
+      }
     } catch (error: any) {
-      Alert.alert('Request Failed', error.message || 'An error occurred submitting your request.');
+      Alert.alert('Registration Failed', error.message || 'An error occurred submitting your request.');
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleFinishAndLogin = () => {
+    setIsAuthenticated(true);
+    router.replace('/(tabs)' as any);
   };
 
   if (isSuccess) {
@@ -61,17 +92,23 @@ export default function RequestAccessScreen() {
           <View style={[styles.successIconBox, { backgroundColor: colors.success + '15' }]}>
             <CheckCircle size={64} color={colors.success} />
           </View>
-          <Text style={styles.successTitle}>Request Submitted!</Text>
+          <Text style={styles.successTitle}>
+            {userType === 'prospective' ? 'Account Created!' : 'Request Submitted!'}
+          </Text>
           <Text style={[styles.successText, { color: colors.secondaryText }]}>
-            Your request for SchoolI access has been received. Our team will verify your details and send your credentials to {formData.email}.
+            {userType === 'prospective'
+              ? `Welcome to SchoolI! You can now log in using your email (${formData.email}) or phone number (${formData.phone}).`
+              : `Your request has been submitted. Verification details have been sent to ${formData.email}.`}
           </Text>
           <Card style={styles.refCard}>
-            <Text style={[styles.refLabel, { color: colors.secondaryText }]}>Reference Number</Text>
-            <Text style={styles.refValue}>REQ-{Math.floor(Math.random() * 90000) + 10000}</Text>
+            <Text style={[styles.refLabel, { color: colors.secondaryText }]}>
+              {userType === 'prospective' ? 'Your Applicant ID' : 'Reference Number'}
+            </Text>
+            <Text style={styles.refValue}>{assignedStudentId}</Text>
           </Card>
           <Button 
-            title="Back to Login" 
-            onPress={() => router.replace('/(auth)' as any)} 
+            title="Proceed to App" 
+            onPress={handleFinishAndLogin} 
             style={styles.successBtn}
           />
         </View>
@@ -89,7 +126,7 @@ export default function RequestAccessScreen() {
           <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
             <ArrowLeft size={24} color={colors.text} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Request Access</Text>
+          <Text style={styles.headerTitle}>Sign Up / Request Access</Text>
           <View style={{ width: 44 }} />
         </View>
 
@@ -97,22 +134,50 @@ export default function RequestAccessScreen() {
           contentContainerStyle={styles.content}
           showsVerticalScrollIndicator={false}
         >
+          {/* User Type Toggle */}
+          <View style={styles.toggleRow}>
+            <TouchableOpacity 
+              onPress={() => setUserType('prospective')}
+              style={[
+                styles.toggleTab, 
+                { backgroundColor: userType === 'prospective' ? colors.primary : colors.border + '30' }
+              ]}
+            >
+              <Text style={[styles.toggleText, { color: userType === 'prospective' ? '#FFF' : colors.text }]}>
+                Prospective / Non-Student
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              onPress={() => setUserType('student')}
+              style={[
+                styles.toggleTab, 
+                { backgroundColor: userType === 'student' ? colors.primary : colors.border + '30' }
+              ]}
+            >
+              <Text style={[styles.toggleText, { color: userType === 'student' ? '#FFF' : colors.text }]}>
+                Enrolled Student
+              </Text>
+            </TouchableOpacity>
+          </View>
+
           <Text style={[styles.introText, { color: colors.secondaryText }]}>
-            Don't have login credentials? Apply for access by providing your university details below.
+            {userType === 'prospective'
+              ? 'Not a student yet? Register with your email and phone number to explore hostels, university info, and clearance guides.'
+              : 'Enrolled student? Sign up with your student ID to access clearance tracking and academic queues.'}
           </Text>
 
           <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: colors.primary }]}>Personal Details</Text>
+            <Text style={[styles.sectionTitle, { color: colors.primary }]}>Contact Details</Text>
             <Input 
-              label="Full Name"
+              label="Full Name *"
               placeholder="e.g. John Doe"
               value={formData.fullName}
               onChangeText={(text) => setFormData({...formData, fullName: text})}
               leftIcon={<User size={18} color={colors.secondaryText} />}
             />
             <Input 
-              label="University Email"
-              placeholder="e.g. john.doe@uniuyo.edu.ng"
+              label="Email Address *"
+              placeholder="e.g. john@gmail.com"
               value={formData.email}
               onChangeText={(text) => setFormData({...formData, email: text})}
               keyboardType="email-address"
@@ -120,17 +185,26 @@ export default function RequestAccessScreen() {
               leftIcon={<Mail size={18} color={colors.secondaryText} />}
             />
             <Input 
-              label="Phone Number"
-              placeholder="+234 ..."
+              label="Phone Number *"
+              placeholder="e.g. +234 801 234 5678"
               value={formData.phone}
               onChangeText={(text) => setFormData({...formData, phone: text})}
               keyboardType="phone-pad"
               leftIcon={<Phone size={18} color={colors.secondaryText} />}
             />
+            <Input 
+              label="Set Password"
+              placeholder="•••••••• (Default: password123)"
+              value={formData.password}
+              onChangeText={(text) => setFormData({...formData, password: text})}
+              secureTextEntry
+            />
           </View>
 
           <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: colors.primary }]}>Academic Information</Text>
+            <Text style={[styles.sectionTitle, { color: colors.primary }]}>
+              {userType === 'prospective' ? 'Target University' : 'Academic Information'}
+            </Text>
             <View style={styles.uniSelector}>
               <Text style={styles.inputLabel}>Select University</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.uniScroll}>
@@ -156,25 +230,30 @@ export default function RequestAccessScreen() {
                 ))}
               </ScrollView>
             </View>
-            <Input 
-              label="Student ID / Matric Number"
-              placeholder="e.g. CSC/2026/001 (Optional)"
-              value={formData.studentId}
-              onChangeText={(text) => setFormData({...formData, studentId: text})}
-              leftIcon={<Hash size={18} color={colors.secondaryText} />}
-            />
+
+            {userType === 'student' && (
+              <Input 
+                label="Student ID / Matric Number *"
+                placeholder="e.g. CSC/2026/001"
+                value={formData.studentId}
+                onChangeText={(text) => setFormData({...formData, studentId: text})}
+                leftIcon={<Hash size={18} color={colors.secondaryText} />}
+              />
+            )}
           </View>
 
-          <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: colors.primary }]}>Identity Verification</Text>
-            <TouchableOpacity style={[styles.uploadBox, { borderColor: colors.border }]}>
-              <Camera size={28} color={colors.secondaryText} />
-              <Text style={[styles.uploadText, { color: colors.secondaryText }]}>Upload ID Card or Admission Letter</Text>
-            </TouchableOpacity>
-          </View>
+          {userType === 'student' && (
+            <View style={styles.section}>
+              <Text style={[styles.sectionTitle, { color: colors.primary }]}>Identity Verification</Text>
+              <TouchableOpacity style={[styles.uploadBox, { borderColor: colors.border }]}>
+                <Camera size={28} color={colors.secondaryText} />
+                <Text style={[styles.uploadText, { color: colors.secondaryText }]}>Upload ID Card or Admission Letter</Text>
+              </TouchableOpacity>
+            </View>
+          )}
 
           <Button 
-            title="Submit Request" 
+            title={userType === 'prospective' ? "Create Applicant Account" : "Submit Request"} 
             onPress={handleSubmit} 
             loading={loading}
             style={styles.submitBtn}
@@ -185,6 +264,16 @@ export default function RequestAccessScreen() {
           </Text>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      <EmailConfirmationModal
+        visible={showConfirmModal}
+        email={formData.email}
+        onClose={() => setShowConfirmModal(false)}
+        onSuccess={() => {
+          setShowConfirmModal(false);
+          setIsSuccess(true);
+        }}
+      />
     </ScreenContainer>
   );
 }
@@ -208,6 +297,24 @@ const styles = StyleSheet.create({
   content: {
     padding: 24,
     paddingTop: 0,
+  },
+  toggleRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 20,
+  },
+  toggleTab: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  toggleText: {
+    fontSize: 12,
+    fontWeight: '700',
+    textAlign: 'center',
   },
   introText: {
     fontSize: 14,

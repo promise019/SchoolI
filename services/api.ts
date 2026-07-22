@@ -1,7 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { API_URL } from '../utils/config';
 
-// In Expo, EXPO_PUBLIC_ prefix is required for env vars to be available on the client.
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.196.236:3000/api';
+// This key must match the API_KEY set in your backend .env and Render environment variables
+const API_KEY = process.env.EXPO_PUBLIC_API_KEY || 'schooli_sk_7f3a9c2d1e8b4f6a0d5e2c9b8a7f4e3d';
 
 const getHeaders = async (isFormData = false) => {
   const token = await AsyncStorage.getItem('jwt_token');
@@ -12,8 +13,11 @@ const getHeaders = async (isFormData = false) => {
   }
   
   if (token) {
-    headers['Authorization'] = `Bearer ${token}`; // Typical JWT Bearer format
+    headers['Authorization'] = `Bearer ${token}`;
   }
+
+  // Always attach the API key so the backend can verify the request is from our app
+  headers['x-api-key'] = API_KEY;
   
   return headers;
 };
@@ -55,6 +59,8 @@ export const api = {
   // Auth
   login: (data: any) => apiFetch('/users/login', { method: 'POST', body: JSON.stringify(data) }),
   signup: (data: any) => apiFetch('/users/signup', { method: 'POST', body: JSON.stringify(data) }),
+  confirmEmail: (data: { email: string; code: string }) => apiFetch('/users/confirm-email', { method: 'POST', body: JSON.stringify(data) }),
+  resendConfirmationCode: (data: { email: string }) => apiFetch('/users/resend-confirmation', { method: 'POST', body: JSON.stringify(data) }),
   forgotPassword: (data: any) => apiFetch('/users/forgot-password', { method: 'POST', body: JSON.stringify(data) }),
   checkUser: (studentId: string) => apiFetch(`/users/check/${studentId}`, { method: 'GET' }),
   getProfile: () => apiFetch('/users/profile', { method: 'GET' }),

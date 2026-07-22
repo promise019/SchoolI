@@ -4,7 +4,7 @@ import { Colors } from "../constants/Colors";
 import { AppProvider } from '../store/appContext';
 import * as SplashScreen from 'expo-splash-screen';
 import * as Notifications from 'expo-notifications';
-import Constants from 'expo-constants';
+import Constants, { ExecutionEnvironment } from 'expo-constants';
 import { useEffect } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { notificationService } from '../services/notificationService';
@@ -20,6 +20,10 @@ function RootLayoutNav() {
   const theme = themeOverride ?? systemTheme;
   const router = useRouter();
   const segments = useSegments();
+
+  const isExpoGo =
+    Constants.executionEnvironment === ExecutionEnvironment.StoreClient ||
+    Constants.appOwnership === 'expo';
 
   useEffect(() => {
     notificationService.initHandler();
@@ -37,22 +41,24 @@ function RootLayoutNav() {
       router.replace('/(tabs)');
     }
 
-    if (isAuthenticated) {
+    if (isAuthenticated && !isExpoGo) {
       notificationService.registerForPushNotificationsAsync().then(token => {
         if (token) {
           console.log('Registered for push notifications with token:', token);
         }
       });
 
-      // Listen for notification clicks (not available in Expo Go SDK 53+)
-      if (Constants.appOwnership !== 'expo') {
+      // Listen for notification clicks (not supported in Expo Go SDK 53+)
+      try {
         const subscription = Notifications.addNotificationResponseReceivedListener((response: Notifications.NotificationResponse) => {
-          const data: any = response.notification.request.content.data;
+          const data: any = response.notification?.request?.content?.data;
           if (data && (data.type === 'reminder' || data.type === 'suggestion')) {
             router.push('/assistant/study-chat' as any);
           }
         });
         return () => subscription.remove();
+      } catch (e) {
+        console.warn('Failed to attach notification response listener:', e);
       }
     }
   }, [isAuthenticated, isLoading, segments]);

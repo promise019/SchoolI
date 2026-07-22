@@ -14,6 +14,7 @@ import { useApp } from '../../store/appContext';
 import { Alert, View as DefaultView } from 'react-native';
 import { Fingerprint } from 'lucide-react-native';
 import { biometricService } from '../../services/biometricService';
+import { EmailConfirmationModal } from './EmailConfirmationModal';
 
 import logoImg from '../../assets/images/splash-icon.png';
 
@@ -66,9 +67,12 @@ export default function LoginScreen() {
     }
   };
 
+  const [showModal, setShowModal] = useState(false);
+  const [confirmEmail, setConfirmEmail] = useState('');
+
   const handleLogin = async () => {
     if (!studentId || !password) {
-      Alert.alert('Error', 'Please enter both Student ID and Password');
+      Alert.alert('Error', 'Please enter both Student ID / Email / Phone and Password');
       return;
     }
 
@@ -86,7 +90,12 @@ export default function LoginScreen() {
       router.replace('/(tabs)' as any);
     } catch (error: any) {
       console.error('Login Failed with error:', error);
-      Alert.alert('Login Failed', error.message || 'An error occurred during login');
+      if (error.data?.requiresEmailConfirmation || error.requiresEmailConfirmation || error.status === 403) {
+        setConfirmEmail(error.data?.email || studentId);
+        setShowModal(true);
+      } else {
+        Alert.alert('Login Failed', error.message || 'An error occurred during login');
+      }
     } finally {
       setLoading(false);
     }
@@ -114,11 +123,11 @@ export default function LoginScreen() {
 
           <View style={styles.form}>
             <Input 
-              label="Student ID"
-              placeholder="e.g. CSC/2026/001"
+              label="Student ID, Email or Phone"
+              placeholder="e.g. CSC/2026/001, john@gmail.com or 080..."
               value={studentId}
               onChangeText={setStudentId}
-              autoCapitalize="characters"
+              autoCapitalize="none"
             />
             <Input 
               label="Password"
@@ -190,6 +199,16 @@ export default function LoginScreen() {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      <EmailConfirmationModal
+        visible={showModal}
+        email={confirmEmail}
+        onClose={() => setShowModal(false)}
+        onSuccess={() => {
+          setShowModal(false);
+          router.replace('/(tabs)' as any);
+        }}
+      />
     </ScreenContainer>
   );
 }

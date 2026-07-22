@@ -1,6 +1,5 @@
 import { io, Socket } from 'socket.io-client';
-
-const SOCKET_URL = 'http://192.168.196.236:3000'; 
+import { SOCKET_URL } from '../utils/config';
 
 class SocketService {
   private socket: Socket | null = null;
@@ -31,13 +30,14 @@ class SocketService {
     }
   }
 
-  sendMessage(roomId: string, text: string, role: string = 'user') {
+  sendMessage(roomId: string, text: string, role: string = 'user', fileData?: { mimeType: string; base64: string; name?: string }) {
     if (this.socket) {
       this.socket.emit('message', {
         roomId,
         text,
         role,
-        sender: 'User', // In real app, use user name
+        sender: 'User',
+        fileData
       });
     }
   }
