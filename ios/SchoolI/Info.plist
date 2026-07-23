@@ -47,6 +47,8 @@
     </dict>
     <key>NSCameraUsageDescription</key>
     <string>The app accesses your camera to scan book pages for AI summarization.</string>
+    <key>NSFaceIDUsageDescription</key>
+    <string>SchoolI uses FaceID to securely unlock your account.</string>
     <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
     <string>Allow SchoolI to use your location for the Campus GPS.</string>
     <key>NSLocationAlwaysUsageDescription</key>
