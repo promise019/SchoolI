@@ -41,7 +41,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import { Audio } from 'expo-av';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { chatWithStudyAI, imageToBase64, audioToBase64, ChatMessage } from '../../services/aiService';
+import { imageToBase64, audioToBase64, ChatMessage } from '../../services/aiService';
 import { loadChatHistory, saveChatHistory, clearCache } from '../../services/aiCache';
 import { ResourceCard } from '../../components/ResourceCard';
 import { Resource } from '../../constants/Resources';
@@ -55,6 +55,8 @@ interface Message {
   audio?: string;
   file?: { uri: string; name: string; type: string };
   resources?: Resource[];
+  edits?: string[];
+  editIndex?: number;
 }
 
 type PendingFile = {
@@ -103,6 +105,8 @@ export default function StudyChatScreen() {
   const [messages, setMessages] = useState<Message[]>([WELCOME_MESSAGE]);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+  const [editingMsgId, setEditingMsgId] = useState<string | null>(null);
+  const [editingAiReplyId, setEditingAiReplyId] = useState<string | null>(null);
   const [isScanning, setIsScanning] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const recordingRef = useRef<Audio.Recording | null>(null);
@@ -125,9 +129,27 @@ export default function StudyChatScreen() {
 
   // Socket Connection
   useEffect(() => {
-    socketService.connect();
-    socketService.joinRoom(roomId);
+    const initSocket = async () => {
+      await socketService.connect();
+      socketService.joinRoom(roomId);
+    };
+    initSocket();
     
+    socketService.onMessageEdited((data) => {
+      setMessages(prev => {
+        return prev.map(m => {
+          if (m.id === data.originalMsgId) {
+            const edits = m.edits ? [...m.edits, data.newText] : [m.text, data.newText];
+            return { ...m, text: data.newText, edits, editIndex: edits.length - 1 };
+          }
+          if (data.aiReplyId && m.id === data.aiReplyId) {
+            return null; // Remove the old AI reply
+          }
+          return m;
+        }).filter(Boolean) as Message[];
+      });
+    });
+
     socketService.onNewMessage((msg) => {
       if (msg.roomId === roomId && msg.role === 'ai') {
         setMessages(prev => {
@@ -209,7 +231,9 @@ export default function StudyChatScreen() {
         id: m._id,
         text: m.text,
         sender: m.role || 'user',
-        timestamp: m.timestamp
+        timestamp: m.timestamp,
+        edits: m.edits,
+        editIndex: m.edits ? m.edits.length - 1 : undefined
       })));
     } catch (error) {
       console.error("Error loading session:", error);
@@ -253,12 +277,19 @@ export default function StudyChatScreen() {
     }
 
     const socketText = text.trim() || (targetName ? `Please examine this attached file: ${targetName}` : '');
-    socketService.sendMessage(roomId, socketText, 'user', fileData);
+    
+    if (editingMsgId) {
+      socketService.editMessage(roomId, editingMsgId, editingAiReplyId || undefined, socketText, fileData);
+      setEditingMsgId(null);
+      setEditingAiReplyId(null);
+    } else {
+      socketService.sendMessage(roomId, socketText, 'user', fileData);
+    }
   };
 
   const handleLongPressMessage = (msg: Message) => {
     if (msg.sender !== 'user') return;
-    const options = ['Copy Text', 'Edit & Resend', 'Cancel'];
+    const options = ['Copy Text', 'Edit Message', 'Cancel'];
     Alert.alert('Message Options', undefined, [
       {
         text: 'Copy Text',
@@ -268,11 +299,33 @@ export default function StudyChatScreen() {
         },
       },
       {
-        text: 'Edit & Resend',
-        onPress: () => setInput(msg.text),
+        text: 'Edit Message',
+        onPress: () => {
+          setInput(msg.text);
+          setEditingMsgId(msg.id);
+          // Find the AI reply right after this message
+          const idx = messages.findIndex(m => m.id === msg.id);
+          if (idx !== -1 && idx + 1 < messages.length && messages[idx + 1].sender === 'ai') {
+            setEditingAiReplyId(messages[idx + 1].id);
+          } else {
+            setEditingAiReplyId(null);
+          }
+        },
       },
       { text: 'Cancel', style: 'cancel' },
     ]);
+  };
+
+  const cycleEdit = (msg: Message, direction: 'prev' | 'next') => {
+    if (!msg.edits || msg.edits.length <= 1) return;
+    const currentIndex = msg.editIndex ?? msg.edits.length - 1;
+    let newIndex = direction === 'prev' ? currentIndex - 1 : currentIndex + 1;
+    
+    if (newIndex >= 0 && newIndex < msg.edits.length) {
+      setMessages(prev => prev.map(m => 
+        m.id === msg.id ? { ...m, editIndex: newIndex, text: m.edits![newIndex] } : m
+      ));
+    }
   };
 
   const sendPendingFile = () => {
@@ -656,10 +709,32 @@ export default function StudyChatScreen() {
                 </Text>
                 {msg.sender === 'user' && (
                   <View style={styles.msgActions}>
+                    {msg.edits && msg.edits.length > 1 && (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', marginRight: 'auto', backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 12, paddingHorizontal: 6, paddingVertical: 2 }}>
+                        <TouchableOpacity onPress={() => cycleEdit(msg, 'prev')} style={{ padding: 4 }}>
+                          <Text style={{ color: '#FFF', fontSize: 10, fontWeight: 'bold' }}>{'<'}</Text>
+                        </TouchableOpacity>
+                        <Text style={{ color: '#FFF', fontSize: 10, marginHorizontal: 4 }}>
+                          {(msg.editIndex ?? msg.edits.length - 1) + 1}/{msg.edits.length}
+                        </Text>
+                        <TouchableOpacity onPress={() => cycleEdit(msg, 'next')} style={{ padding: 4 }}>
+                          <Text style={{ color: '#FFF', fontSize: 10, fontWeight: 'bold' }}>{'>'}</Text>
+                        </TouchableOpacity>
+                      </View>
+                    )}
                     <TouchableOpacity onPress={() => { Clipboard.setString(msg.text); Alert.alert('Copied!', 'Message copied to clipboard.'); }} style={styles.msgActionBtn}>
                       <Copy size={11} color="rgba(255,255,255,0.6)" />
                     </TouchableOpacity>
-                    <TouchableOpacity onPress={() => setInput(msg.text)} style={styles.msgActionBtn}>
+                    <TouchableOpacity onPress={() => {
+                        setInput(msg.text);
+                        setEditingMsgId(msg.id);
+                        const idx = messages.findIndex(m => m.id === msg.id);
+                        if (idx !== -1 && idx + 1 < messages.length && messages[idx + 1].sender === 'ai') {
+                          setEditingAiReplyId(messages[idx + 1].id);
+                        } else {
+                          setEditingAiReplyId(null);
+                        }
+                    }} style={styles.msgActionBtn}>
                       <Edit3 size={11} color="rgba(255,255,255,0.6)" />
                     </TouchableOpacity>
                   </View>
@@ -688,6 +763,17 @@ export default function StudyChatScreen() {
         </ScrollView>
 
         <View style={[styles.inputWrapper, { borderTopColor: colors.border }]}>
+          {editingMsgId && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: colors.primary + '15', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 8, marginBottom: 12 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Edit3 size={14} color={colors.primary} />
+                <Text style={{ color: colors.primary, fontSize: 12, fontWeight: '600' }}>Editing message...</Text>
+              </View>
+              <TouchableOpacity onPress={() => { setEditingMsgId(null); setEditingAiReplyId(null); setInput(''); }}>
+                <Text style={{ color: colors.primary, fontSize: 12, fontWeight: '700' }}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          )}
           {pendingFile ? (
             <View style={[styles.pendingFileContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
               {/* Top row: icon + file info + discard */}
